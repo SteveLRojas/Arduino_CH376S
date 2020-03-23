@@ -9,24 +9,16 @@ void setup() {
   SPI.begin();
   SPI.setDataMode(SPI_MODE0);
   pinMode(10, OUTPUT);
-
-  digitalWrite(10, LOW);
-  SPI.transfer(0x05); //reset all
-  digitalWrite(10, HIGH);
+  
   for(int d = 0; d<256; ++d)
   {
     read_buff[d] = NULL;
   }
+  
+  usb_reset_all();
   delay(100);
   Serial.print("\n");
-  usb_check_exist();
-  usb_get_version();
-  usb_set_mode_5();
-  usb_set_mode_7();
-  usb_set_mode_6();
-  usb_disk_connect();
-  usb_disk_mount();
-  usb_get_status();
+  usb_autoconfig();
 }
 
 void loop()
@@ -81,10 +73,39 @@ void loop()
       case 14:
         usb_read_data0();
         break;
+      case 15:
+        usb_autoconfig();
+        break;
+      case 16:
+        usb_reset_all();
+        break;
+      case 17:
+        usb_file_read();
+        break;
     }
   delay(500);
   Serial.println("Ready.");
   }
+}
+
+void usb_autoconfig()
+{
+  Serial.println("USB Autoconfig:");
+  usb_check_exist();
+  usb_get_version();
+  usb_set_mode_5();
+  usb_set_mode_7();
+  usb_set_mode_6();
+  usb_disk_connect();
+  usb_disk_mount();
+  usb_get_status();
+}
+void usb_reset_all()
+{
+  Serial.println("USB reset all");
+  digitalWrite(10, LOW);
+  SPI.transfer(0x05); //reset all
+  digitalWrite(10, HIGH);
 }
 
 void usb_set_file_name()
@@ -165,6 +186,113 @@ void usb_read_data0()
   digitalWrite(10, HIGH);
   Serial.print("\n");
   delay(1);
+}
+
+void usb_file_read()
+{
+  Serial.println("usb_file_read:");
+  unsigned int bytes_read = 0;
+  unsigned int file_size = 0;
+  byte n_bytes = 0;
+  byte size_0, size_1, size_2, size_3;
+  
+  //usb file open command
+  digitalWrite(10, LOW);  //enable chip
+  SPI.transfer(0x32); //file open
+  digitalWrite(10, HIGH);
+  //delay(10);
+  //usb_get_status();
+  
+  int timeout = 100;
+  while ((usb_return_status() != 0x14) && (timeout != 0))
+  {
+    delay(1);
+    timeout--;
+  }
+  if (timeout == 0)
+  {
+    Serial.println("ERR: Timeout\n");
+    return;
+  }
+  
+  //get file size command
+  digitalWrite(10, LOW);
+  SPI.transfer(0x0c); //get file size
+  SPI.transfer(0x68); //command data
+  size_0 = SPI.transfer(0x00);
+  size_1 = SPI.transfer(0x00);
+  size_2 = SPI.transfer(0x00);
+  size_3 = SPI.transfer(0x00);
+  digitalWrite(10, HIGH);
+  file_size = (size_1 << 8)|size_0;
+  //delay(10);
+  //usb_get_status();
+  timeout = 100;
+  while ((usb_return_status() != 0x14) && (timeout != 0))
+  {
+    delay(1);
+    timeout--;
+  }
+  if (timeout == 0)
+  {
+    Serial.println("ERR: Timeout\n");
+    return;
+  }
+  
+  //send the byte read command
+  digitalWrite(10, LOW);
+  SPI.transfer(0x3a); //byte read command
+  SPI.transfer(size_0);
+  SPI.transfer(size_1);
+  digitalWrite(10, HIGH);
+  timeout = 100;
+  while ((usb_return_status() != 0x1D) && (timeout != 0))
+  {
+    delay(1);
+    timeout--;
+  }
+  if (timeout == 0)
+  {
+    Serial.println("ERR: Timeout\n");
+    return;
+  }
+  
+  //send usb read data0 command
+  digitalWrite(10, LOW);
+  SPI.transfer(0x27); //RD_USB_DATA0 command
+  n_bytes = SPI.transfer(NULL);
+  for(int d = 0; d < n_bytes; ++d)
+  {
+    read_buff[d] = SPI.transfer(NULL);
+    Serial.print(read_buff[d]);
+    ++bytes_read;
+  }
+  digitalWrite(10, HIGH);
+  delay(1);
+  //Serial.println(bytes_read, HEX);
+  //Serial.println(file_size, HEX);
+  while(bytes_read < file_size)
+  {
+    Serial.print(bytes_read, HEX);
+    Serial.print("/");
+    Serial.println(file_size, HEX);
+    usb_byte_read_go();
+    delay(100);
+    digitalWrite(10, LOW);
+    SPI.transfer(0x27); //RD_USB_DATA0 command
+    n_bytes = SPI.transfer(NULL);
+    for(int d = 0; d < n_bytes; ++d)
+    {
+      read_buff[d] = SPI.transfer(NULL);
+      Serial.print(read_buff[d]);
+      ++bytes_read;
+    }
+    digitalWrite(10, HIGH);
+    delay(1);
+  }
+  Serial.print("\n");
+  
+  usb_file_close();
 }
 
 void usb_get_file_size()
@@ -264,4 +392,13 @@ void usb_get_status()
   //Serial.println(SPI.transfer(0x00), HEX);  //is there more?
   digitalWrite(10, HIGH);
   delay(1);
+}
+
+byte usb_return_status()
+{
+  digitalWrite(10, LOW);
+  SPI.transfer(0x22); //get status
+  byte status = SPI.transfer(0x00);
+  digitalWrite(10, HIGH);
+  return status;
 }
