@@ -3,6 +3,77 @@ byte c_param = 0;
 byte read_len_high = 0;
 byte read_len_low = 0;
 char read_buff[256];
+union Bitfield_16
+{
+  struct Bits_16
+  {
+    unsigned bit0 : 1;
+    unsigned bit1 : 1;
+    unsigned bit2 : 1;
+    unsigned bit3 : 1;
+    unsigned bit4 : 1;
+    unsigned bit5 : 1;
+    unsigned bit6 : 1;
+    unsigned bit7 : 1; 
+    unsigned bit8 : 1;
+    unsigned bit9 : 1;
+    unsigned bit10 : 1;
+    unsigned bit11 : 1;
+    unsigned bit12 : 1;
+    unsigned bit13 : 1;
+    unsigned bit14 : 1;
+    unsigned bit15 : 1; 
+  } bits;
+  unsigned int value;
+} bitfield_16;
+
+unsigned int get_word()
+{
+  byte next_bit;
+  unsigned int result;
+  result = bitfield_16.value;
+  next_bit = ~(bitfield_16.bits.bit0 ^ bitfield_16.bits.bit7);
+  bitfield_16.value = bitfield_16.value >> 1;
+  bitfield_16.bits.bit15 = next_bit;
+  return result;
+}
+
+unsigned int build_word()
+{
+  for(int d = 0; d < 15; ++d)
+  {
+    get_word();
+  }
+  return get_word();
+}
+
+void ByteToHex(byte value, char* buff)
+{
+  char table[16] = {0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46};
+  buff[0] = table[(value >> 4) & 0x0f];
+  buff[1] = table[(value) & 0x0f];
+  buff[2] = NULL;
+}
+
+void print_test_data()
+{
+  char buff[3];
+  unsigned int counter = 0;
+  unsigned int current_word;
+  bitfield_16.value = 0;
+  do
+  {
+    current_word = build_word();
+    ByteToHex((current_word >> 8) & 0xff, buff);
+    Serial.print(buff);
+    ByteToHex(current_word & 0xff, buff);
+    Serial.print(buff);
+    if((counter & 0x0f) == 0x0f)
+      Serial.print('\n');
+    ++counter;
+  } while(counter != 0);
+}
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
@@ -82,10 +153,69 @@ void loop()
       case 17:
         usb_file_read();
         break;
+      case 18:
+        usb_disk_capacity();
+        break;
+      case 19:
+        usb_disk_query();
+        break;
+      case 20:
+        print_test_data();
+        break;
     }
-  delay(500);
+  delay(100);
   Serial.println("Ready.");
   }
+}
+
+void usb_disk_capacity()
+{
+  unsigned long capacity;
+  Serial.println("CMD_DISK_CAPACITY");
+  digitalWrite(10, LOW);
+  SPI.transfer(0x3E); //disk capacity command
+  digitalWrite(10, HIGH);
+  delay(10);
+  digitalWrite(10, LOW);
+  SPI.transfer(0x27); //RD_USB_DATA0 command
+  SPI.transfer(NULL); //get number of bytes (always 4)
+  for(int d = 0; d < 4; ++d)
+  {
+    capacity = capacity >> 8;
+    capacity = capacity | ((unsigned long)SPI.transfer(NULL) << 24);
+  }
+  digitalWrite(10, HIGH);
+  Serial.println(capacity * 512, DEC);
+  delay(1);
+}
+
+void usb_disk_query()
+{
+  unsigned long total_sectors, free_sectors;
+  Serial.println("CMD_DISK_QUERY");
+  digitalWrite(10, LOW);
+  SPI.transfer(0x3F); //disk query command
+  digitalWrite(10, HIGH);
+  delay(100);
+  digitalWrite(10, LOW);
+  SPI.transfer(0x27); //RD_USB_DATA0 command
+  SPI.transfer(NULL); //get number of bytes (always 8)
+  for(int d = 0; d < 4; ++d)
+  {
+    total_sectors = total_sectors >> 8;
+    total_sectors = total_sectors | ((unsigned long)SPI.transfer(NULL) << 24);
+  }
+  for(int d = 0; d < 4; ++d)
+  {
+    free_sectors = free_sectors >> 8;
+    free_sectors = free_sectors | ((unsigned long)SPI.transfer(NULL) << 24);
+  }
+  digitalWrite(10, HIGH);
+  Serial.print("logical bytes: ");
+  Serial.println(total_sectors * 512, DEC);
+  Serial.print("free bytes: ");
+  Serial.println(free_sectors * 512, DEC);
+  delay(1);
 }
 
 void usb_autoconfig()
