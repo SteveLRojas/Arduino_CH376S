@@ -3,6 +3,9 @@ byte c_param = 0;
 byte read_len_high = 0;
 byte read_len_low = 0;
 char read_buff[256];
+byte n_bytes_in_test_buff = 0;
+byte test_buff[2];
+unsigned long free_space;
 union Bitfield_16
 {
   struct Bits_16
@@ -74,10 +77,37 @@ void print_test_data()
   } while(counter != 0);
 }
 
+byte get_test_byte()
+{
+    unsigned int current_word;
+    if(n_bytes_in_test_buff == 0)
+    {
+      current_word = build_word();
+      test_buff[0] = current_word & 0xff;
+      test_buff[1] = (current_word >> 8) & 0xff;
+      n_bytes_in_test_buff = 2;
+    }
+    -- n_bytes_in_test_buff;
+    return test_buff[n_bytes_in_test_buff];
+}
+
+void wait_status(byte target)
+{
+  int timeout = 3000;
+  while ((usb_return_status() != target) && (timeout != 0))
+  {
+    delay(1);
+    timeout--;
+  }
+  if (timeout == 0)
+    Serial.println("ERR: Timeout");
+}
+
 void setup() {
   // put your setup code here, to run once:
   Serial.begin(9600);
   SPI.begin();
+  SPI.setClockDivider(2);
   SPI.setDataMode(SPI_MODE0);
   pinMode(10, OUTPUT);
   
@@ -162,10 +192,105 @@ void loop()
       case 20:
         print_test_data();
         break;
+      case 21:
+        usb_file_create();
+        break;
+      case 22:
+        usb_write_test_data();
+        break;
     }
   delay(100);
   Serial.println("Ready.");
   }
+}
+
+void usb_file_create()
+{
+  Serial.println("CMD_FILE_CREATE");
+  digitalWrite(10, LOW);
+  SPI.transfer(0x34); //file create command
+  digitalWrite(10, HIGH);
+}
+
+void usb_byte_write(unsigned int length)
+{
+  Serial.println("CMD_BYTE_WRITE");
+  digitalWrite(10, LOW);
+  SPI.transfer(0x3c); //byte write command
+  SPI.transfer(length & 0xff);  //length low byte
+  SPI.transfer((length >> 8) & 0xff); //length high byte
+  digitalWrite(10, HIGH);
+}
+
+void usb_byte_wr_go()
+{
+  //Serial.println("CMD_BYTE_WR_GO");
+  digitalWrite(10, LOW);
+  SPI.transfer(0x3d);
+  digitalWrite(10, HIGH);
+}
+
+void usb_write_test_data()
+{
+  unsigned long bytes_written = 0;
+  byte bytes_requested;
+  Serial.println("write USB test data");
+  //usb_disk_query();
+  if(free_space < 0x20000)
+  {
+    Serial.println("Not enough space");
+    return;
+  }
+  bitfield_16.value = 0;
+  usb_file_create();
+  wait_status(0x14);
+  usb_byte_write(0xffff);
+  wait_status(0x1e);
+  //wr_req_data command
+  digitalWrite(10, LOW);
+  SPI.transfer(0x2d); //WR_REQ_DATA command
+  bytes_requested = SPI.transfer(NULL);
+  for(int d = 0; d < bytes_requested; ++d)
+  {
+    SPI.transfer(get_test_byte());
+    ++ bytes_written;
+  }
+  digitalWrite(10, HIGH);
+  wait_status(0x1e);
+  while(bytes_written != 0x20000)
+  {
+    usb_byte_wr_go();
+    wait_status(0x1e);
+    if(usb_return_status() == 0x14)
+    {
+      usb_byte_write(((0x20000 - bytes_written) <= 0xffff) ? (0x20000 - bytes_written) : (0xffff));
+      wait_status(0x1e);
+      if(usb_return_status() != 0x1e)
+        break;
+    }
+    //wr_req_data command
+    digitalWrite(10, LOW);
+    SPI.transfer(0x2d); //WR_REQ_DATA command
+    bytes_requested = SPI.transfer(NULL);
+    for(int d = 0; d < bytes_requested; ++d)
+    {
+      SPI.transfer(get_test_byte());
+      ++ bytes_written;
+      if(bytes_written == 0x20000)
+        break;
+    }
+    digitalWrite(10, HIGH);
+    wait_status(0x1e);
+    //Serial.println(bytes_written, HEX);
+  }
+  usb_byte_wr_go();
+  wait_status(0x14);
+  usb_get_status();
+  c_param = 1;
+  usb_file_close();
+  c_param = 0;
+  wait_status(0x14);
+  usb_get_status();
 }
 
 void usb_disk_capacity()
@@ -211,6 +336,7 @@ void usb_disk_query()
     free_sectors = free_sectors | ((unsigned long)SPI.transfer(NULL) << 24);
   }
   digitalWrite(10, HIGH);
+  free_space = free_sectors * 512;
   Serial.print("logical bytes: ");
   Serial.println(total_sectors * 512, DEC);
   Serial.print("free bytes: ");
@@ -229,6 +355,7 @@ void usb_autoconfig()
   usb_disk_connect();
   usb_disk_mount();
   usb_get_status();
+  usb_disk_query();
 }
 void usb_reset_all()
 {
