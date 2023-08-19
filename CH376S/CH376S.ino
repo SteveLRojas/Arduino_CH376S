@@ -2,18 +2,36 @@
 #include "core.h"
 #include "support.h"
 
+void usb_print_disk_info()
+{
+	Serial.print(F("capacity in KBs: "));
+	Serial.println(capacity >> 1, DEC);	//convert sectors to KB
+	Serial.print(F("logical KBs: "));
+	Serial.println(total_sectors >> 1, DEC);
+	Serial.print(F("free KBs: "));
+	Serial.println(free_sectors >> 1, DEC);
+}
+
 void usb_autoconfig()
 {
-	Serial.println("USB Autoconfig:");
-	usb_check_exist();
-	usb_get_version();
-	usb_set_mode_5();
-	usb_set_mode_7();
-	usb_set_mode_6();
+	Serial.print(F("check exist: "));
+	print_hex_byte(usb_check_exist(0x55));
+	Serial.print(F("get version: "));
+	print_hex_byte(usb_get_version());
+	usb_set_mode(0x05);
+	delay(1);
+	usb_set_mode(0x07);
+	delay(1);
+	usb_set_mode(0x06);
+	delay(1);
 	usb_disk_connect();
+	delay(500);
 	usb_disk_mount();
-	usb_get_status();
+	delay(500);
+	print_hex_byte(usb_get_status());
+	usb_disk_capacity();
 	usb_disk_query();
+	usb_print_disk_info();
 }
 
 
@@ -24,11 +42,6 @@ void setup() {
 	SPI.setClockDivider(2);
 	SPI.setDataMode(SPI_MODE0);
 	pinMode(10, OUTPUT);
-
-	for(int d = 0; d<256; ++d)
-	{
-		read_buff[d] = NULL;
-	}
 
 	usb_reset_all();
 	delay(100);
@@ -41,69 +54,97 @@ void loop()
 	switch(get_hex())
 	{
 		case 0x00:
-			usb_check_exist();
+			Serial.print(F("check exist: "));
+			print_hex_byte(usb_check_exist(0x55));
 			break;
 		case 0x01:
-			usb_get_version();
+			Serial.print(F("get version: "));
+			print_hex_byte(usb_get_version());
 			break;
 		case 0x02:
-			usb_set_mode_5();
+			Serial.println(F("set USB mode 5"));
+			usb_set_mode(0x05);
 			break;
 		case 0x03:
-			usb_set_mode_7();
+			Serial.println(F("set USB mode 7"));
+			usb_set_mode(0x07);
 			break;
 		case 0x04:
-			usb_set_mode_6();
+			Serial.println(F("set USB mode 6"));
+			usb_set_mode(0x06);
 			break;
 		case 0x05:
+			Serial.println(F("CMD_DISK_CONNECT"));
 			usb_disk_connect();
 			break;
 		case 0x06:
+			Serial.println(F("CMD_DISK_MOUNT"));
 			usb_disk_mount();
 			break;
 		case 0x07:
-			usb_get_status();
+			Serial.print(F("get status: "));
+			print_hex_byte(usb_get_status());
 			break;
 		case 0x08:
+			Serial.println(F("usb set file name: "));
 			usb_set_file_name();
 			break;
 		case 0x09:
+			Serial.println(F("CMD_FILE_OPEN"));
 			usb_file_open();
 			break;
 		case 0x0A:
+			Serial.print(F("CMD_GET_FILE_SIZE: "));
 			usb_get_file_size();
+			Serial.println(file_size, DEC);
 			break;
 		case 0x0B:
+			Serial.println(F("CMD_FILE_CLOSE"));
 			usb_file_close();
 			break;
 		case 0x0C:
+			Serial.println(F("CMD_BYTE_READ"));
 			usb_byte_read();
 			break;
 		case 0x0D:
+			Serial.println(F("CMD_BYTE_RD_GO"));
 			usb_byte_read_go();
 			break;
 		case 0x0E:
+			Serial.println(F("CMD_RD_USB_DATA0"));
 			usb_read_data0();
 			break;
 		case 0x0F:
+			Serial.println(F("USB Autoconfig:"));
 			usb_autoconfig();
 			break;
 		case 0x10:
+			Serial.println(F("USB reset all"));
 			usb_reset_all();
 			break;
 		case 0x11:
+			Serial.println(F("usb_file_read:"));
 			usb_file_read();
 			break;
 		case 0x12:
+			Serial.println(F("CMD_DISK_CAPACITY (KB)"));
 			usb_disk_capacity();
+			Serial.println(capacity >> 1, DEC);	//convert sectors to KB
 			break;
 		case 0x13:
+			Serial.println(F("CMD_DISK_QUERY"));
 			usb_disk_query();
+			Serial.print(F("logical KBs: "));
+			Serial.println(total_sectors >> 1, DEC);
+			Serial.print(F("free KBs: "));
+			Serial.println(free_sectors >> 1, DEC);
 			break;
 		case 0x14:
+			Serial.println(F("print test data: "));
 			print_test_data();
 			break;
 		case 0x15:
+			Serial.println(F("CMD_FILE_CREATE"));
 			usb_file_create();
 			break;
 		case 0x16:
@@ -111,5 +152,5 @@ void loop()
 			break;
 	}
 	delay(100);
-	Serial.println("Ready.");
+	Serial.println(F("Ready."));
 }

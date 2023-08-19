@@ -28,5 +28,8 @@ unsigned int get_word();
 unsigned int build_word();
 byte get_test_byte();
 void byte_to_hex(byte value, char* buff);
+void word_to_hex(word, char*);
+void print_hex_byte(byte);
+void print_hex_word(uint16_t);
 void print_test_data();
 uint16_t get_hex();
