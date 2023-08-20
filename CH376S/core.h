@@ -29,3 +29,5 @@ void usb_set_mode(byte);
 void usb_disk_connect();
 void usb_disk_mount();
 byte usb_get_status();
+void usb_file_enum_go();
+void usb_enumerate();

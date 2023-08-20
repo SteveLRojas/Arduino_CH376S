@@ -12,7 +12,7 @@ void usb_print_disk_info()
 	Serial.println(free_sectors >> 1, DEC);
 }
 
-void usb_autoconfig()
+void usb_autoconfig()	//TODO: try to get rid of the fixed delays...
 {
 	Serial.print(F("check exist: "));
 	print_hex_byte(usb_check_exist(0x55));
@@ -43,10 +43,28 @@ void setup() {
 	SPI.setDataMode(SPI_MODE0);
 	pinMode(10, OUTPUT);
 
+	random_init(0);
+
 	usb_reset_all();
 	delay(100);
 	Serial.print("\n");
 	usb_autoconfig();
+}
+
+void test()
+{
+	file_size = 0xDEADBEEF;
+	byte* size = (byte*)((void*)&file_size);
+	print_hex_byte(size[0]);
+	print_hex_byte(size[1]);
+	print_hex_byte(size[2]);
+	print_hex_byte(size[3]);
+
+	size[0] = 0x55;
+	size[1] = 0x00;
+	size[2] = 0x00;
+	size[3] = 0xAA;
+	Serial.println(file_size, HEX);
 }
 
 void loop()
@@ -148,7 +166,20 @@ void loop()
 			usb_file_create();
 			break;
 		case 0x16:
+			Serial.println(F("write USB test data"));
 			usb_write_test_data();
+			break;
+		case 0x17:
+			Serial.println(F("file enum go"));
+			usb_file_enum_go();
+			break;
+		case 0x18:
+			Serial.println(F("usb enumerate"));
+			usb_enumerate();
+			break;
+		case 0xFF:
+			Serial.println(F("test: "));
+			test();
 			break;
 	}
 	delay(100);

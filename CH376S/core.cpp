@@ -23,7 +23,7 @@ byte wait_status(byte target, uint16_t timeout)
 		timeout--;
 	}
 
-	Serial.println("ERR: Timeout");
+	Serial.println(F("ERR: Timeout"));
 	timeout_flag = 1;
 	return last_status;
 }
@@ -35,13 +35,13 @@ void usb_file_create()
 	digitalWrite(10, HIGH);
 }
 
-void usb_byte_write(unsigned int length)	//TODO:
+void usb_byte_write()
 {
-	Serial.println("CMD_BYTE_WRITE");
+	byte* size = (byte*)((void*)&file_size);
 	digitalWrite(10, LOW);
 	SPI.transfer(0x3c); //byte write command
-	SPI.transfer(length & 0xff);  //length low byte
-	SPI.transfer((length >> 8) & 0xff); //length high byte
+	SPI.transfer(size[0]);  //length low byte
+	SPI.transfer(size[1]);	//length high byte
 	digitalWrite(10, HIGH);
 }
 
@@ -52,65 +52,68 @@ void usb_byte_wr_go()
 	digitalWrite(10, HIGH);
 }
 
-void usb_write_test_data()	//TODO:
+void usb_write_test_data()
 {
-	unsigned long bytes_written = 0;
+	uint16_t bytes_written;
 	byte bytes_requested;
-	Serial.println("write USB test data");
+	
 	//usb_disk_query();
 	if(free_sectors < (0x20000 >> 9))
 	{
 		Serial.println("Not enough space");
 		return;
 	}
-	bitfield_16.value = 0;
+
+	random_init(0);
+	
 	usb_file_create();
 	wait_status(0x14, 3000);
-	usb_byte_write(0xffff);
-	wait_status(0x1e, 3000);
-	//wr_req_data command
-	digitalWrite(10, LOW);
-	SPI.transfer(0x2d); //WR_REQ_DATA command
-	bytes_requested = SPI.transfer(NULL);
-	for(int d = 0; d < bytes_requested; ++d)
+	if(timeout_flag)
+		return;
+
+	for(byte d = 0; d < 4; ++d)	//WE WILL WRITE 4 BLOCKS OF 32KB
 	{
-		SPI.transfer(get_test_byte());
-		++ bytes_written;
-	}
-	digitalWrite(10, HIGH);
-	wait_status(0x1e, 3000);
-	while(bytes_written != 0x20000)
-	{
+		bytes_written = 0;
+		file_size = 0x8000;	//set file size to 32 KB
+		usb_byte_write();
+		wait_status(0x1E, 3000);
+		if(timeout_flag)
+			return;
+
+		while(1)
+		{
+			digitalWrite(10, LOW);
+			SPI.transfer(0x2D); //WR_REQ_DATA command
+			bytes_requested = SPI.transfer(0x00);
+
+			while(bytes_requested)
+			{
+				SPI.transfer(get_test_byte());
+				++ bytes_written;
+				if(bytes_written == file_size)
+					break;
+				--bytes_requested;
+			}
+			digitalWrite(10, HIGH);
+			wait_status(0x1E, 3000);
+			if(timeout_flag)
+				return;
+			if(bytes_written == file_size)
+				break;
+
+			usb_byte_wr_go();
+			wait_status(0x1E, 3000);
+			if(timeout_flag)
+				return;
+		}
 		usb_byte_wr_go();
-		wait_status(0x1e, 3000);
-		if(usb_get_status() == 0x14)
-		{
-			usb_byte_write(((0x20000 - bytes_written) <= 0xffff) ? (0x20000 - bytes_written) : (0xffff));
-			wait_status(0x1e, 3000);
-			if(usb_get_status() != 0x1e)
-				break;
-		}
-		//wr_req_data command
-		digitalWrite(10, LOW);
-		SPI.transfer(0x2d); //WR_REQ_DATA command
-		bytes_requested = SPI.transfer(NULL);
-		for(int d = 0; d < bytes_requested; ++d)
-		{
-			SPI.transfer(get_test_byte());
-			++ bytes_written;
-			if(bytes_written == 0x20000)
-				break;
-		}
-		digitalWrite(10, HIGH);
-		wait_status(0x1e, 3000);
-		//Serial.println(bytes_written, HEX);
+		wait_status(0x14, 3000);
+		if(timeout_flag)
+			return;
 	}
-	usb_byte_wr_go();
-	wait_status(0x14, 3000);
-	usb_get_status();
+
 	usb_file_close();
 	wait_status(0x14, 3000);
-	usb_get_status();
 }
 
 void usb_disk_capacity()
@@ -179,8 +182,8 @@ void usb_set_file_name()
 	byte count = 0;
 	digitalWrite(10, LOW);
 	SPI.transfer(0x2f); //set file name
-	SPI.transfer(0x2f); // "/" character at start of name
-	while(fname[count]!=NULL)
+	SPI.transfer('/'); // "/" character at start of name
+	while(fname[count] != NULL)
 	{
 		SPI.transfer(fname[count]);
 		Serial.print(fname[count]);
@@ -209,7 +212,7 @@ void usb_file_close()
 
 void usb_byte_read()
 {
-	byte* size = (byte*)((void*)file_size);
+	byte* size = (byte*)((void*)&file_size);
 	
 	digitalWrite(10, LOW);
 	SPI.transfer(0x3a); //byte read command
@@ -235,7 +238,7 @@ void usb_read_data0()
 
 	while(n_bytes)
 	{
-		Serial.print(SPI.transfer(0x00));
+		Serial.print((char)SPI.transfer(0x00));
 		--n_bytes;
 	}
 	
@@ -288,7 +291,7 @@ void usb_file_read()
 
 void usb_get_file_size()
 {
-	byte* size = (byte*)((void*)file_size);
+	byte* size = (byte*)((void*)&file_size);
 	
 	digitalWrite(10, LOW);
 	SPI.transfer(0x0c); //get file size
@@ -351,4 +354,59 @@ byte usb_get_status()
 	temp = SPI.transfer(0x00);
 	digitalWrite(10, HIGH);
 	return temp;
+}
+
+void usb_file_enum_go()
+{
+	digitalWrite(10, LOW);
+	SPI.transfer(0x33); //file enum go (CMD_FILE_ENUM_GO)
+	digitalWrite(10, HIGH);
+}
+
+// Enumerate the contents of the current directory
+void usb_enumerate()
+{
+	uint8_t n_bytes = 0;
+	digitalWrite(10, LOW);
+	SPI.transfer(0x2f); // CMD_SET_FILE_NAME
+	SPI.transfer('/');
+	SPI.transfer('*');
+	SPI.transfer(0x00);
+	digitalWrite(10, HIGH);
+
+	usb_file_open();
+	
+	while(1)
+	{
+		wait_status(0x1D, 100); // Wait for USB_INT_DISK_READ
+		if(timeout_flag)
+			break;
+
+		digitalWrite(10, LOW);
+		SPI.transfer(0x27); //RD_USB_DATA0 command
+		n_bytes = SPI.transfer(0x00);
+
+		for(unsigned int d = 0; (d < 11) && n_bytes; ++d)
+		{
+			Serial.print((char)SPI.transfer(0x00));
+			--n_bytes;
+		}
+		
+		--n_bytes;
+		if(SPI.transfer(0x00) & 0x10)
+			Serial.print(F(" (DIR)"));
+		else
+			Serial.print(F(" (FILE)"));
+		
+		while(n_bytes)
+		{
+			SPI.transfer(0x00);
+			--n_bytes;
+		}
+		
+		digitalWrite(10, HIGH);
+		Serial.print(F("\n"));
+	
+		usb_file_enum_go();
+	}
 }

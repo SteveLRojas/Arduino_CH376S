@@ -6,6 +6,12 @@ byte test_buff[2];
 
 bitfield_16_t bitfield_16;
 
+void random_init(uint16_t seed)
+{
+	bitfield_16.value = seed;
+	n_bytes_in_test_buff = 0;
+}
+
 unsigned int get_word()
 {
 	byte next_bit;

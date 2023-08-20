@@ -24,6 +24,7 @@ typedef union Bitfield_16
 
 extern bitfield_16_t bitfield_16;
 
+void random_init(uint16_t seed);
 unsigned int get_word();
 unsigned int build_word();
 byte get_test_byte();
