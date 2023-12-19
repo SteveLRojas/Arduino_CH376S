@@ -18,26 +18,44 @@ void usb_autoconfig()	//TODO: try to get rid of the fixed delays...
 	print_hex_byte(usb_check_exist(0x55));
 	Serial.print(F("get version: "));
 	print_hex_byte(usb_get_version());
+
+    Serial.println(F("Setting mode 0x05"));
 	usb_set_mode(0x05);
 	delay(1);
+
+    Serial.println(F("Setting mode 0x07"));
 	usb_set_mode(0x07);
 	delay(1);
+
+    Serial.println(F("Setting mode 0x06"));
 	usb_set_mode(0x06);
 	delay(1);
+
+    Serial.println(F("usb_disk_connect"));
 	usb_disk_connect();
 	delay(500);
+
+    Serial.println(F("usb_disk_mount"));
 	usb_disk_mount();
 	delay(500);
+
+    Serial.println(F("usb_get_status"));
 	print_hex_byte(usb_get_status());
+
+    Serial.println(F("usb_disk_capacity"));
 	usb_disk_capacity();
+
+    Serial.println(F("usb_disk_query"));
 	usb_disk_query();
+
+    Serial.println(F("usb_print_disk_info"));
 	usb_print_disk_info();
 }
 
 
 void setup() {
 	// put your setup code here, to run once:
-	Serial.begin(9600);
+	Serial.begin(115200);
 	SPI.begin();
 	SPI.setClockDivider(2);
 	SPI.setDataMode(SPI_MODE0);

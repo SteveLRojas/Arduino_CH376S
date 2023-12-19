@@ -23,7 +23,11 @@ byte wait_status(byte target, uint16_t timeout)
 		timeout--;
 	}
 
-	Serial.println(F("ERR: Timeout"));
+	Serial.print(F("ERR: Timeout\nTarget:"));
+    Serial.println(target, HEX);
+    Serial.print(F("Last: "));
+    Serial.println(last_status, HEX);
+    
 	timeout_flag = 1;
 	return last_status;
 }
